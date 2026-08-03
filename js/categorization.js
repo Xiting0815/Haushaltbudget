@@ -101,6 +101,20 @@
   }
 
   /**
+   * SEPA-Gläubiger-ID aus dem Verwendungszweck extrahieren (nur bei
+   * Lastschriften vorhanden). Anders als der Name vermuten lässt, steht in
+   * den Kontoauszügen keine IBAN des Zahlungsempfängers — aber die
+   * Gläubiger-ID ist eine feste, eindeutige SEPA-Kennung des
+   * Rechnungsstellers und damit ein deutlich zuverlässigerer Schlüssel für
+   * die Wiederkehr-Erkennung als der reine Text-Abgleich.
+   */
+  function extractGlaeubigerId(detail) {
+    const m = (detail || '').match(/Gl[äa]ubiger-?ID:?\s*([A-Z]{2}\s?\d{2}[A-Z0-9]{3,35})/i);
+    if (!m) return null;
+    return m[1].replace(/\s+/g, '').toUpperCase();
+  }
+
+  /**
    * Best-effort-Extraktion eines "Empfänger/Absender"-Schlüssels aus
    * Erläuterung + Verwendungszweck, für Gruppierung (Wiederkehr-Erkennung)
    * und als Basis für gelernte Regeln.
@@ -128,6 +142,9 @@
   }
 
   function extractMerchantKey(typ, detail) {
+    // Gläubiger-ID hat Vorrang: eindeutiger und stabiler als Text-Heuristik.
+    const glaeubigerId = extractGlaeubigerId(detail);
+    if (glaeubigerId) return normNoSpace(glaeubigerId);
     const candidate = extractMerchantCandidate(typ, detail);
     return normNoSpace(candidate).slice(0, 48);
   }
@@ -222,6 +239,7 @@
     categorize,
     extractMerchantKey,
     extractMerchantDisplay,
+    extractGlaeubigerId,
     loadRules,
     getSortedRules,
     learnFromCorrection,
