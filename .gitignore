@@ -1,0 +1,20 @@
+# Abhängigkeiten (nicht Teil des Projekts, nur zum Vendoring von pdf.js verwendet)
+node_modules/
+package-lock.json
+
+# Echte Finanzdaten: NIEMALS committen
+sample-data/
+*.pdf
+*Kontoauszug*
+*Auszug*
+extracted-data/
+*.ndb
+*.sqlite
+
+# Backups/Exporte, die echte Buchungsdaten enthalten könnten
+*-backup.json
+*-export.json
+
+# Editor/OS
+.DS_Store
+.vscode/

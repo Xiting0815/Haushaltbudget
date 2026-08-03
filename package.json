@@ -1,0 +1,17 @@
+{
+  "name": "haushaltsbudget-fixkosten-tracker",
+  "version": "1.0.0",
+  "description": "Installierbare PWA für Haushaltsbudget, Fixkosten, Wochen-/Monatsbudget und Sparpotenzial. Alle Daten bleiben lokal (IndexedDB), kein Backend.",
+  "private": true,
+  "scripts": {
+    "test": "node tests/integration.test.js"
+  },
+  "keywords": ["pwa", "budget", "fixkosten"],
+  "author": "",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "fake-indexeddb": "^6.2.5",
+    "pdfjs-dist": "^3.11.174"
+  }
+}
+
