@@ -327,6 +327,45 @@
       }
     }
 
+    const ausgelaufen = state.fixkosten.filter((f) => f.status === 'ausgelaufen');
+    if (ausgelaufen.length > 0) {
+      const heading = document.createElement('p');
+      heading.className = 'hint-text';
+      heading.textContent = 'Vermutlich beendet (lange nicht mehr gebucht):';
+      unsicherContainer.appendChild(heading);
+      for (const f of ausgelaufen) {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.style.marginBottom = '10px';
+        card.innerHTML = `
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <div>
+              <div class="list-item-title">${escapeHTML(f.name)}</div>
+              <div class="list-item-sub">${fmtMoney(-Math.abs(f.amountCents))} · war ${rhythmusLabel(f.rhythmus)} · zuletzt ${fmtDate(f.naechsteFaelligkeit)}</div>
+            </div>
+          </div>
+          <div class="modal-actions" style="margin-top:0">
+            <button class="btn btn-secondary" data-action="reactivate">Läuft noch, reaktivieren</button>
+            <button class="btn btn-danger" data-action="remove">Löschen</button>
+          </div>
+        `;
+        card.querySelector('[data-action="reactivate"]').addEventListener('click', async () => {
+          f.status = 'bestaetigt';
+          f.active = true;
+          await DB.put('fixkosten', f);
+          toast('Reaktiviert');
+          await loadAll();
+          render();
+        });
+        card.querySelector('[data-action="remove"]').addEventListener('click', async () => {
+          await DB.delete('fixkosten', f.id);
+          await loadAll();
+          render();
+        });
+        unsicherContainer.appendChild(card);
+      }
+    }
+
     const list = document.getElementById('fixkostenListe');
     const confirmed = state.fixkosten.filter((f) => f.status === 'bestaetigt' || f.status === 'manuell')
       .sort((a, b) => (a.naechsteFaelligkeit || '9999').localeCompare(b.naechsteFaelligkeit || '9999'));
@@ -695,28 +734,34 @@
 
         await DB.setMeta('currentBalanceCents', parsed.closingBalance.balanceCents);
 
-        // Wiederkehr-Erkennung + Fixkosten-Vorschläge aktualisieren
+        // Wiederkehr-Erkennung + Fixkosten-Vorschläge aktualisieren.
+        // Referenzdatum für den Aktualitäts-Check ist die neueste uns
+        // bekannte Buchung, NICHT das reale heutige Datum — sonst würden
+        // alle Fixkosten fälschlich als "ausgelaufen" markiert, sobald der
+        // Nutzer eine Weile keinen neuen Auszug importiert hat.
         const allTx = await DB.getAll('transactions');
-        const candidates = Recurring.detectRecurring(allTx);
+        const referenceDate = allTx.reduce((max, t) => (t.date > max ? t.date : max), '0000-00-00');
+        const candidates = Recurring.detectRecurring(allTx, referenceDate);
         const existingFixkosten = await DB.getAll('fixkosten');
         for (const cand of candidates) {
           const match = existingFixkosten.find((f) =>
             f.merchantKey === cand.merchantKey && Recurring.amountsCloseEnough(f.amountCents, cand.amountCents));
           if (match) {
-            if (match.status !== 'ignoriert') {
+            if (match.status !== 'ignoriert' && match.status !== 'manuell') {
               match.naechsteFaelligkeit = cand.naechsteFaelligkeit;
               match.occurrences = cand.occurrences;
               match.rhythmus = cand.rhythmus;
-              if (match.status !== 'manuell') {
-                match.status = cand.confidence === 'bestaetigt' ? 'bestaetigt' : 'unsicher';
-                match.active = match.status === 'bestaetigt';
-              }
+              match.confidenceScore = cand.confidenceScore;
+              // "ausgelaufen": Buchung seit deutlich länger als dem
+              // erkannten Rhythmus entsprechend nicht mehr aufgetaucht
+              // (z. B. gekündigtes Abo) -> nicht länger als anstehend führen.
+              match.status = cand.confidence === 'ausgelaufen' ? 'ausgelaufen' : cand.confidence;
+              match.active = match.status === 'bestaetigt';
               await DB.put('fixkosten', match);
             }
-          } else {
+          } else if (cand.confidence !== 'ausgelaufen') {
             const lastTx = allTx.filter((t) => t.merchantKey === cand.merchantKey).sort((a, b) => b.date.localeCompare(a.date))[0];
             const { categoryId } = Categorization.categorize(lastTx.typ, lastTx.detail, rules);
-            const status = cand.confidence === 'bestaetigt' ? 'bestaetigt' : 'unsicher';
             await DB.add('fixkosten', {
               name: Categorization.extractMerchantDisplay(lastTx.typ, lastTx.detail),
               merchantKey: cand.merchantKey,
@@ -724,9 +769,10 @@
               rhythmus: cand.rhythmus,
               naechsteFaelligkeit: cand.naechsteFaelligkeit,
               occurrences: cand.occurrences,
+              confidenceScore: cand.confidenceScore,
               category: categoryId,
-              status,
-              active: status === 'bestaetigt',
+              status: cand.confidence,
+              active: cand.confidence === 'bestaetigt',
               createdAt: new Date().toISOString(),
             });
           }

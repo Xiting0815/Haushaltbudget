@@ -124,7 +124,15 @@
     const d = detail || '';
     let candidate;
     if (t.includes('debitkartenzahlung') || t.includes('barausz') || t.includes('bargeldausz')) {
-      candidate = d.split('/')[0];
+      if (d.includes('/')) {
+        candidate = d.split('/')[0];
+      } else {
+        // Älteres ELV-Kartenterminal-Format ohne "//Ort/DE"-Trenner, z. B.
+        // "WOOLWORTH GMBH ELV61479844 30.01 19.12 ME2 IC-...": am
+        // Terminal-Code bzw. an der Datumsangabe abschneiden.
+        const stop = d.search(/\bELV\d+|\d{2}\.\d{2}\s+\d{2}[.:]\d{2}/i);
+        candidate = stop >= 0 ? d.slice(0, stop) : d;
+      }
     } else if (t.includes('lastschrift')) {
       const digitMatch = d.match(/\d{4,}/);
       let cut = digitMatch ? d.slice(0, digitMatch.index) : d;
@@ -142,9 +150,18 @@
   }
 
   function extractMerchantKey(typ, detail) {
-    // Gläubiger-ID hat Vorrang: eindeutiger und stabiler als Text-Heuristik.
-    const glaeubigerId = extractGlaeubigerId(detail);
-    if (glaeubigerId) return normNoSpace(glaeubigerId);
+    // Gläubiger-ID hat Vorrang — aber nur bei echten Lastschrift-/
+    // Dauerauftrags-Mandaten. Bei Kartenzahlungen (Debitkartenzahlung)
+    // steht dank des ELV-Verfahrens manchmal ebenfalls eine Gläubiger-ID im
+    // Referenztext, die dann aber nur die Zahlungsabwicklung des
+    // *Geschäfts* identifiziert (z. B. jeder Woolworth-Einkauf per Karte
+    // trägt dieselbe ID) — kein Hinweis auf eine wiederkehrende Buchung
+    // dieses einen Kaufs. Daher nur bei Lastschrift/Dauerauftrag verwenden.
+    const t = norm(typ);
+    if (t.includes('lastschrift') || t.includes('dauerauftrag')) {
+      const glaeubigerId = extractGlaeubigerId(detail);
+      if (glaeubigerId) return normNoSpace(glaeubigerId);
+    }
     const candidate = extractMerchantCandidate(typ, detail);
     return normNoSpace(candidate).slice(0, 48);
   }

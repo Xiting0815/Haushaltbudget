@@ -62,31 +62,32 @@ async function importAllStatements() {
     await DB.setMeta('currentBalanceCents', parsed.closingBalance.balanceCents);
 
     const allTx = await DB.getAll('transactions');
-    const candidates = Recurring.detectRecurring(allTx);
+    const referenceDate = allTx.reduce((max, t) => (t.date > max ? t.date : max), '0000-00-00');
+    const candidates = Recurring.detectRecurring(allTx, referenceDate);
     const existingFixkosten = await DB.getAll('fixkosten');
     for (const cand of candidates) {
       const match = existingFixkosten.find((fk) =>
         fk.merchantKey === cand.merchantKey && Recurring.amountsCloseEnough(fk.amountCents, cand.amountCents));
       if (match) {
-        if (match.status !== 'ignoriert') {
+        if (match.status !== 'ignoriert' && match.status !== 'manuell') {
           match.naechsteFaelligkeit = cand.naechsteFaelligkeit;
           match.occurrences = cand.occurrences;
           match.rhythmus = cand.rhythmus;
-          if (match.status !== 'manuell') {
-            match.status = cand.confidence === 'bestaetigt' ? 'bestaetigt' : 'unsicher';
-            match.active = match.status === 'bestaetigt';
-          }
+          match.confidenceScore = cand.confidenceScore;
+          match.status = cand.confidence === 'ausgelaufen' ? 'ausgelaufen' : cand.confidence;
+          match.active = match.status === 'bestaetigt';
           await DB.put('fixkosten', match);
         }
-      } else {
+      } else if (cand.confidence !== 'ausgelaufen') {
         const lastTx = allTx.filter((t) => t.merchantKey === cand.merchantKey).sort((a, b) => b.date.localeCompare(a.date))[0];
         const { categoryId } = Categorization.categorize(lastTx.typ, lastTx.detail, rules);
-        const status = cand.confidence === 'bestaetigt' ? 'bestaetigt' : 'unsicher';
         await DB.add('fixkosten', {
           name: Categorization.extractMerchantDisplay(lastTx.typ, lastTx.detail),
           merchantKey: cand.merchantKey, amountCents: cand.amountCents, rhythmus: cand.rhythmus,
           naechsteFaelligkeit: cand.naechsteFaelligkeit, occurrences: cand.occurrences,
-          category: categoryId, status, active: status === 'bestaetigt', createdAt: new Date().toISOString(),
+          confidenceScore: cand.confidenceScore,
+          category: categoryId, status: cand.confidence, active: cand.confidence === 'bestaetigt',
+          createdAt: new Date().toISOString(),
         });
       }
     }
