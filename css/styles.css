@@ -488,6 +488,12 @@ h1, h2, h3, p { margin: 0; }
   animation: fadeIn 0.15s ease-out;
 }
 
+/* [hidden] muss die .modal-overlay-Regel (display:flex) überschreiben,
+   sonst bleibt der Dialog unsichtbar-aber-anwesend und blockiert Klicks. */
+.modal-overlay[hidden] {
+  display: none;
+}
+
 .modal-content {
   background: var(--color-surface);
   width: 100%;
