@@ -68,6 +68,8 @@
     state.fixkosten = await DB.getAll('fixkosten');
     state.geplant = await DB.getAll('geplanteAusgaben');
     state.currentBalanceCents = await DB.getMeta('currentBalanceCents', 0);
+    state.currentBalanceSource = await DB.getMeta('currentBalanceSource', null);
+    state.currentBalanceDate = await DB.getMeta('currentBalanceDate', null);
     if (!state.selectedMonth) state.selectedMonth = monthKey(todayISO());
   }
 
@@ -101,9 +103,16 @@
   // ---------------------------------------------------------------
   function renderUebersicht() {
     document.getElementById('kontostand').textContent = fmtMoney(state.currentBalanceCents);
-    document.getElementById('kontostandDatum').textContent = state.transactions.length
-      ? `Stand aus letztem Import / letzter Buchung`
-      : 'Noch kein Kontoauszug importiert';
+    const datumEl = document.getElementById('kontostandDatum');
+    if (state.currentBalanceSource === 'manual' && state.currentBalanceDate) {
+      datumEl.textContent = `Manuell gesetzt am ${fmtDate(state.currentBalanceDate)}`;
+    } else if (state.currentBalanceSource === 'import' && state.currentBalanceDate) {
+      datumEl.textContent = `Stand aus Kontoauszug vom ${fmtDate(state.currentBalanceDate)}`;
+    } else if (state.transactions.length) {
+      datumEl.textContent = 'Stand aus letztem Import / letzter Buchung';
+    } else {
+      datumEl.textContent = 'Noch kein Kontoauszug importiert';
+    }
 
     const budget = Budget.computeBudget({
       currentBalanceCents: state.currentBalanceCents,
@@ -119,12 +128,16 @@
     const mEl = document.getElementById('monatsbudget');
     mEl.textContent = fmtMoney(budget.availableForMonthCents);
     mEl.classList.toggle('negative', budget.availableForMonthCents < 0);
-    document.getElementById('monatsbudgetSub').textContent = `${fmtMoney(budget.monthReserveCents)} für offene Fixkosten & Geplantes zurückgelegt`;
+    document.getElementById('monatsbudgetSub').textContent = budget.monthReserveCents >= 0
+      ? `${fmtMoney(budget.monthReserveCents)} für offene Fixkosten & Geplantes zurückgelegt`
+      : `${fmtMoney(-budget.monthReserveCents)} an erwarteten Einnahmen bereits eingerechnet`;
 
-    // Anstehend: offene Fixkosten + geplante Ausgaben, sortiert nach Fälligkeit
+    // Anstehend: offene Fixkosten (Ausgaben & Einnahmen) + geplante Posten,
+    // sortiert nach Fälligkeit. Vorzeichen bleibt erhalten (Einnahmen +, s.
+    // buildSimpleRow/CSS-Klasse "positive").
     const anstehend = [
       ...state.fixkosten.filter((f) => f.active && f.naechsteFaelligkeit)
-        .map((f) => ({ type: 'fixkosten', name: f.name, amountCents: -Math.abs(f.amountCents), date: f.naechsteFaelligkeit, id: f.id, category: f.category })),
+        .map((f) => ({ type: 'fixkosten', name: f.name, amountCents: f.amountCents, date: f.naechsteFaelligkeit, id: f.id, category: f.category })),
       ...state.geplant.filter((p) => p.status === 'offen')
         .map((p) => ({ type: 'geplant', name: p.name, amountCents: p.betragCents, date: p.faelligkeitsdatum, id: p.id, category: p.category })),
     ].sort((a, b) => a.date.localeCompare(b.date)).slice(0, 6);
@@ -135,7 +148,8 @@
       list.innerHTML = '<p class="empty-hint">Nichts Anstehendes erfasst.</p>';
     } else {
       for (const item of anstehend) {
-        list.appendChild(buildSimpleRow(item.name, fmtDate(item.date), item.amountCents, item.type === 'fixkosten' ? '🔁' : '📌', item.category));
+        const emoji = item.type === 'fixkosten' ? (item.amountCents >= 0 ? '💰' : '🔁') : '📌';
+        list.appendChild(buildSimpleRow(item.name, fmtDate(item.date), item.amountCents, emoji, item.category));
       }
     }
 
@@ -283,6 +297,10 @@
   // ---------------------------------------------------------------
   // FIXKOSTEN
   // ---------------------------------------------------------------
+  function richtungOf(f) {
+    return f.amountCents >= 0 ? 'einnahme' : 'ausgabe';
+  }
+
   function renderFixkosten() {
     const unsicherContainer = document.getElementById('unsichereFixkosten');
     const unsicher = state.fixkosten.filter((f) => f.status === 'unsicher');
@@ -293,6 +311,7 @@
       heading.textContent = 'Möglicherweise wiederkehrend — bitte bestätigen:';
       unsicherContainer.appendChild(heading);
       for (const f of unsicher) {
+        const isIncome = richtungOf(f) === 'einnahme';
         const card = document.createElement('div');
         card.className = 'card';
         card.style.marginBottom = '10px';
@@ -300,11 +319,11 @@
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
             <div>
               <div class="list-item-title">${escapeHTML(f.name)}</div>
-              <div class="list-item-sub">${fmtMoney(-Math.abs(f.amountCents))} · vermutlich ${rhythmusLabel(f.rhythmus)} · ${f.occurrences}× erkannt</div>
+              <div class="list-item-sub">${fmtMoney(f.amountCents)} · vermutlich ${rhythmusLabel(f.rhythmus)}${isIncome ? ' Einnahme' : ''} · ${f.occurrences}× erkannt</div>
             </div>
           </div>
           <div class="modal-actions" style="margin-top:0">
-            <button class="btn btn-secondary" data-action="confirm">Ja, wiederkehrend</button>
+            <button class="btn btn-secondary" data-action="confirm">Ja, ${isIncome ? 'erwartete Einnahme' : 'wiederkehrend'}</button>
             <button class="btn btn-danger" data-action="ignore">Nein, einmalig</button>
           </div>
         `;
@@ -312,7 +331,7 @@
           f.status = 'bestaetigt';
           f.active = true;
           await DB.put('fixkosten', f);
-          toast('Als Fixkosten bestätigt');
+          toast(isIncome ? 'Als erwartete Einnahme bestätigt' : 'Als Fixkosten bestätigt');
           await loadAll();
           render();
         });
@@ -320,6 +339,7 @@
           f.status = 'ignoriert';
           f.active = false;
           await DB.put('fixkosten', f);
+          toast('Wird nicht mehr vorgeschlagen');
           await loadAll();
           render();
         });
@@ -341,7 +361,7 @@
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
             <div>
               <div class="list-item-title">${escapeHTML(f.name)}</div>
-              <div class="list-item-sub">${fmtMoney(-Math.abs(f.amountCents))} · war ${rhythmusLabel(f.rhythmus)} · zuletzt ${fmtDate(f.naechsteFaelligkeit)}</div>
+              <div class="list-item-sub">${fmtMoney(f.amountCents)} · war ${rhythmusLabel(f.rhythmus)} · zuletzt ${fmtDate(f.naechsteFaelligkeit)}</div>
             </div>
           </div>
           <div class="modal-actions" style="margin-top:0">
@@ -366,14 +386,25 @@
       }
     }
 
-    const list = document.getElementById('fixkostenListe');
-    const confirmed = state.fixkosten.filter((f) => f.status === 'bestaetigt' || f.status === 'manuell')
+    // Bestätigte/manuelle Fixkosten: Ausgaben und Einnahmen getrennt
+    // dargestellt, damit die Summe "pro Monat" nicht Äpfel mit Birnen
+    // mischt (eine Ausgabe von 50€ + eine Einnahme von 250€ wären sonst
+    // fälschlich "200€/Monat Fixkosten").
+    const confirmedAll = state.fixkosten.filter((f) => f.status === 'bestaetigt' || f.status === 'manuell')
       .sort((a, b) => (a.naechsteFaelligkeit || '9999').localeCompare(b.naechsteFaelligkeit || '9999'));
+    const confirmedExpense = confirmedAll.filter((f) => richtungOf(f) === 'ausgabe');
+    const confirmedIncome = confirmedAll.filter((f) => richtungOf(f) === 'einnahme');
+
+    renderFixkostenList(document.getElementById('fixkostenListe'), document.getElementById('fixkostenLeer'), confirmedExpense);
+    renderFixkostenList(document.getElementById('einnahmenListe'), document.getElementById('einnahmenLeer'), confirmedIncome);
+  }
+
+  function renderFixkostenList(list, emptyEl, items) {
     list.innerHTML = '';
-    document.getElementById('fixkostenLeer').hidden = confirmed.length !== 0;
+    emptyEl.hidden = items.length !== 0;
 
     let monthlyTotal = 0;
-    for (const f of confirmed) {
+    for (const f of items) {
       monthlyTotal += toMonthlyEquivalent(f);
       const cat = catInfo(f.category);
       const row = document.createElement('button');
@@ -385,13 +416,13 @@
           <div class="list-item-title">${escapeHTML(f.name)}</div>
           <div class="list-item-sub">${rhythmusLabel(f.rhythmus)} · nächste Fälligkeit ${fmtDate(f.naechsteFaelligkeit)}</div>
         </div>
-        <div class="list-item-amount negative">${fmtMoney(-Math.abs(f.amountCents))}</div>
+        <div class="list-item-amount ${f.amountCents >= 0 ? 'positive' : 'negative'}">${f.amountCents >= 0 ? '+' : ''}${fmtMoney(f.amountCents)}</div>
       `;
       row.addEventListener('click', () => openFixkostenModal(f));
       list.appendChild(row);
     }
 
-    if (confirmed.length > 0) {
+    if (items.length > 0) {
       const summary = document.createElement('p');
       summary.className = 'hint-text';
       summary.textContent = `Entspricht ca. ${fmtMoney(monthlyTotal)} pro Monat.`;
@@ -409,9 +440,17 @@
 
   function openFixkostenModal(f) {
     const isNew = !f.id;
+    let richtung = isNew ? 'ausgabe' : richtungOf(f);
     const body = document.createElement('div');
     body.innerHTML = `
       <div class="modal-title">${isNew ? 'Neue Fixkosten' : 'Fixkosten bearbeiten'}</div>
+      <div class="field">
+        <label>Art</label>
+        <div class="category-select" id="fkRichtung">
+          <div class="category-chip" data-val="ausgabe">Ausgabe</div>
+          <div class="category-chip" data-val="einnahme">Einnahme</div>
+        </div>
+      </div>
       <div class="field"><label>Name</label><input class="input" id="fkName" value="${escapeAttr(f.name || '')}" placeholder="z. B. Miete"></div>
       <div class="field"><label>Betrag (€)</label><input class="input" id="fkAmount" type="number" step="0.01" value="${f.amountCents ? Math.abs(f.amountCents / 100) : ''}"></div>
       <div class="field"><label>Rhythmus</label>
@@ -426,8 +465,20 @@
       <div class="modal-actions">
         <button class="btn btn-primary btn-block" id="fkSave">Speichern</button>
       </div>
-      ${!isNew ? '<div class="modal-actions"><button class="btn btn-danger btn-block" id="fkDelete">Löschen</button></div>' : ''}
+      ${!isNew ? `<div class="modal-actions">${f.merchantKey
+        ? '<button class="btn btn-danger btn-block" id="fkIgnore">Das ist keine Fixkosten — nicht mehr vorschlagen</button>'
+        : '<button class="btn btn-danger btn-block" id="fkDelete">Löschen</button>'}</div>` : ''}
     `;
+
+    const richtungWrap = body.querySelector('#fkRichtung');
+    function paintRichtung() {
+      richtungWrap.querySelectorAll('.category-chip').forEach((el) => el.classList.toggle('selected', el.dataset.val === richtung));
+    }
+    richtungWrap.querySelectorAll('.category-chip').forEach((chip) => {
+      chip.addEventListener('click', () => { richtung = chip.dataset.val; paintRichtung(); });
+    });
+    paintRichtung();
+
     let selectedCat = f.category || Categorization.DEFAULT_CATEGORY_ID;
     const catWrap = body.querySelector('#fkCat');
     for (const c of Categorization.CATEGORIES) {
@@ -447,7 +498,7 @@
       const amountEur = parseFloat(body.querySelector('#fkAmount').value.replace(',', '.'));
       if (!name || !amountEur || amountEur <= 0) { toast('Bitte Name und Betrag angeben'); return; }
       f.name = name;
-      f.amountCents = -Math.round(amountEur * 100);
+      f.amountCents = richtung === 'einnahme' ? Math.round(amountEur * 100) : -Math.round(amountEur * 100);
       f.rhythmus = body.querySelector('#fkRhythmus').value;
       f.naechsteFaelligkeit = body.querySelector('#fkDate').value;
       f.category = selectedCat;
@@ -455,13 +506,28 @@
       f.active = true;
       if (isNew) await DB.add('fixkosten', f);
       else await DB.put('fixkosten', f);
-      toast('Fixkosten gespeichert');
+      toast('Gespeichert');
       closeModal();
       await loadAll();
       render();
     });
 
-    if (!isNew) {
+    if (!isNew && f.merchantKey) {
+      // Automatisch erkannte Posten: nie hart löschen (sonst würde der
+      // nächste Import dieselbe Buchung wieder als Kandidat vorschlagen,
+      // s. importFiles) — stattdessen dauerhaft als "ignoriert" markieren.
+      // Das behält den Eintrag (Rückholung möglich über Einstellungen) und
+      // wird beim Merge in importFiles respektiert.
+      body.querySelector('#fkIgnore').addEventListener('click', async () => {
+        f.status = 'ignoriert';
+        f.active = false;
+        await DB.put('fixkosten', f);
+        toast('Wird nicht mehr vorgeschlagen');
+        closeModal();
+        await loadAll();
+        render();
+      });
+    } else if (!isNew) {
       body.querySelector('#fkDelete').addEventListener('click', async () => {
         await DB.delete('fixkosten', f.id);
         toast('Gelöscht');
@@ -494,7 +560,7 @@
           <div class="list-item-title">${escapeHTML(p.name)}</div>
           <div class="list-item-sub">fällig ${fmtDate(p.faelligkeitsdatum)} ${p.status === 'erledigt' ? '· erledigt ✓' : ''}</div>
         </div>
-        <div class="list-item-amount negative">${fmtMoney(p.betragCents)}</div>
+        <div class="list-item-amount ${p.betragCents >= 0 ? 'positive' : 'negative'}">${p.betragCents >= 0 ? '+' : ''}${fmtMoney(p.betragCents)}</div>
       `;
       row.addEventListener('click', () => openGeplantModal(p));
       list.appendChild(row);
@@ -503,9 +569,17 @@
 
   function openGeplantModal(p) {
     const isNew = !p.id;
+    let richtung = isNew ? 'ausgabe' : (p.betragCents >= 0 ? 'einnahme' : 'ausgabe');
     const body = document.createElement('div');
     body.innerHTML = `
-      <div class="modal-title">${isNew ? 'Geplante Ausgabe' : 'Bearbeiten'}</div>
+      <div class="modal-title">${isNew ? 'Geplanter Posten' : 'Bearbeiten'}</div>
+      <div class="field">
+        <label>Art</label>
+        <div class="category-select" id="gpRichtung">
+          <div class="category-chip" data-val="ausgabe">Ausgabe</div>
+          <div class="category-chip" data-val="einnahme">Einnahme</div>
+        </div>
+      </div>
       <div class="field"><label>Bezeichnung</label><input class="input" id="gpName" value="${escapeAttr(p.name || '')}" placeholder="z. B. Geburtstagsgeschenk"></div>
       <div class="field"><label>Betrag (€)</label><input class="input" id="gpAmount" type="number" step="0.01" value="${p.betragCents ? Math.abs(p.betragCents / 100) : ''}"></div>
       <div class="field"><label>Fällig am</label><input class="input" id="gpDate" type="date" value="${p.faelligkeitsdatum || todayISO()}"></div>
@@ -514,6 +588,16 @@
       ${!isNew && p.status === 'offen' ? '<div class="modal-actions"><button class="btn btn-secondary btn-block" id="gpDone">Als erledigt markieren</button></div>' : ''}
       ${!isNew ? '<div class="modal-actions"><button class="btn btn-danger btn-block" id="gpDelete">Löschen</button></div>' : ''}
     `;
+
+    const richtungWrap = body.querySelector('#gpRichtung');
+    function paintRichtung() {
+      richtungWrap.querySelectorAll('.category-chip').forEach((el) => el.classList.toggle('selected', el.dataset.val === richtung));
+    }
+    richtungWrap.querySelectorAll('.category-chip').forEach((chip) => {
+      chip.addEventListener('click', () => { richtung = chip.dataset.val; paintRichtung(); });
+    });
+    paintRichtung();
+
     let selectedCat = p.category || Categorization.DEFAULT_CATEGORY_ID;
     const catWrap = body.querySelector('#gpCat');
     for (const c of Categorization.CATEGORIES) {
@@ -533,7 +617,7 @@
       const amountEur = parseFloat(body.querySelector('#gpAmount').value.replace(',', '.'));
       if (!name || !amountEur || amountEur <= 0) { toast('Bitte Bezeichnung und Betrag angeben'); return; }
       p.name = name;
-      p.betragCents = -Math.round(amountEur * 100);
+      p.betragCents = richtung === 'einnahme' ? Math.round(amountEur * 100) : -Math.round(amountEur * 100);
       p.faelligkeitsdatum = body.querySelector('#gpDate').value;
       p.category = selectedCat;
       p.status = p.status || 'offen';
@@ -620,6 +704,33 @@
   // EINSTELLUNGEN
   // ---------------------------------------------------------------
   function renderEinstellungen() {
+    const ignoriert = state.fixkosten.filter((f) => f.status === 'ignoriert');
+    const ignorierteList = document.getElementById('ignorierteListe');
+    ignorierteList.innerHTML = '';
+    document.getElementById('ignorierteLeer').hidden = ignoriert.length !== 0;
+    for (const f of ignoriert) {
+      const cat = catInfo(f.category);
+      const row = document.createElement('div');
+      row.className = 'rule-item';
+      row.innerHTML = `
+        <div style="display:flex;align-items:center;gap:9px;min-width:0">
+          <span class="cat-dot" style="background:${cat.color}"></span>
+          <span class="rule-keyword">${escapeHTML(f.name)} · ${fmtMoney(f.amountCents)}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+          <button class="btn btn-secondary btn-sm" data-action="undo" type="button">Doch Fixkosten</button>
+        </div>
+      `;
+      row.querySelector('[data-action="undo"]').addEventListener('click', async () => {
+        f.status = 'unsicher';
+        await DB.put('fixkosten', f);
+        toast('Wird wieder zur Prüfung vorgeschlagen');
+        await loadAll();
+        render();
+      });
+      ignorierteList.appendChild(row);
+    }
+
     const list = document.getElementById('regelnListe');
     const rows = [...state.rules].sort((a, b) => (a.category).localeCompare(b.category));
     list.innerHTML = '';
@@ -733,6 +844,8 @@
         });
 
         await DB.setMeta('currentBalanceCents', parsed.closingBalance.balanceCents);
+        await DB.setMeta('currentBalanceSource', 'import');
+        await DB.setMeta('currentBalanceDate', parsed.closingBalance.date);
 
         // Wiederkehr-Erkennung + Fixkosten-Vorschläge aktualisieren.
         // Referenzdatum für den Aktualitäts-Check ist die neueste uns
@@ -801,6 +914,35 @@
   }
 
   // ---------------------------------------------------------------
+  // Kontostand manuell setzen
+  // ---------------------------------------------------------------
+  // Kontoauszüge lassen sich realistisch erst zum Monatsende importieren,
+  // daher kennt die App tagesaktuelle Buchungen im laufenden Monat nicht.
+  // Damit der Nutzer trotzdem jederzeit "bereinigt" starten kann, lässt
+  // sich der getrackte Kontostand hier direkt setzen (z. B. nach Blick in
+  // die Banking-App), statt auf den nächsten Import warten zu müssen.
+  function openKontostandModal() {
+    const body = document.createElement('div');
+    body.innerHTML = `
+      <div class="modal-title">Kontostand aktualisieren</div>
+      <p class="hint-text" style="margin-bottom:14px">Setze den aktuellen Kontostand direkt — z. B. wenn du ihn gerade in deiner Banking-App nachgeschaut hast und der nächste Kontoauszug noch nicht importierbar ist.</p>
+      <div class="field"><label>Aktueller Kontostand (€)</label><input class="input" id="ksAmount" type="number" step="0.01" value="${(state.currentBalanceCents / 100).toFixed(2)}"></div>
+      <div class="modal-actions"><button class="btn btn-primary btn-block" id="ksSave">Speichern</button></div>
+    `;
+    body.querySelector('#ksSave').addEventListener('click', async () => {
+      const raw = body.querySelector('#ksAmount').value.replace(',', '.');
+      const eur = parseFloat(raw);
+      if (Number.isNaN(eur)) { toast('Bitte einen gültigen Betrag angeben'); return; }
+      await Manual.setBalanceManually(DB, Math.round(eur * 100));
+      toast('Kontostand aktualisiert');
+      closeModal();
+      await loadAll();
+      render();
+    });
+    openModal(body);
+  }
+
+  // ---------------------------------------------------------------
   // Quick-Add (manuelle Buchung)
   // ---------------------------------------------------------------
   function openQuickAddModal() {
@@ -859,6 +1001,7 @@
     });
 
     document.getElementById('btnQuickAdd').addEventListener('click', openQuickAddModal);
+    document.getElementById('btnEditKontostand').addEventListener('click', openKontostandModal);
     document.getElementById('btnFixkostenNeu').addEventListener('click', () => openFixkostenModal({}));
     document.getElementById('btnGeplantNeu').addEventListener('click', () => openGeplantModal({}));
 

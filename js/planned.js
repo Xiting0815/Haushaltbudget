@@ -1,14 +1,17 @@
 /**
  * planned.js
  *
- * Geplante (zukünftige) Ausgaben: der Nutzer trägt Ausgaben ein, die noch
- * nicht gebucht sind, aber absehbar anstehen. Diese fließen sofort als
- * Rücklage in die Budgetberechnung ein (siehe budget.js).
+ * Geplante (zukünftige), noch nicht gebuchte Posten — Ausgaben (z. B. ein
+ * Geschenk) UND Einnahmen (z. B. eine einmalige Erstattung). Ausgaben
+ * werden als negativer, Einnahmen als positiver betragCents gespeichert und
+ * fließen sofort in die Budgetberechnung ein (siehe budget.js): Ausgaben
+ * als Rücklage (senken das Verfügbare), Einnahmen als Zuschlag (erhöhen
+ * das Verfügbare schon vor dem tatsächlichen Zahlungseingang).
  *
  * Abgleich-Logik: Taucht später beim PDF-Import eine passende reale
- * Buchung auf (ähnlicher Betrag, zeitlich passend), wird sie mit dem
- * geplanten Posten verknüpft und dieser als erledigt markiert — sonst
- * würde der Betrag doppelt vom Budget abgezogen.
+ * Buchung mit gleichem Vorzeichen auf (ähnlicher Betrag, zeitlich
+ * passend), wird sie mit dem geplanten Posten verknüpft und dieser als
+ * erledigt markiert — sonst würde der Betrag doppelt gezählt.
  */
 (function (root) {
   'use strict';
@@ -37,14 +40,18 @@
   function matchPlannedToTransactions(openPlanned, newTransactions, alreadyLinkedTxIds) {
     const linked = new Set(alreadyLinkedTxIds || []);
     const matches = [];
-    const candidates = newTransactions.filter((t) => t.amountCents < 0 && !linked.has(t.id) && !t.plannedId);
 
     for (const planned of openPlanned) {
       if (planned.status !== 'offen') continue;
+      // Nur Buchungen mit demselben Vorzeichen wie der geplante Posten sind
+      // Kandidaten: eine geplante Einnahme darf nicht mit einer Ausgabe
+      // verknüpft werden und umgekehrt.
+      const wantsIncome = planned.betragCents >= 0;
       let best = null;
       let bestDiff = Infinity;
-      for (const tx of candidates) {
-        if (linked.has(tx.id)) continue;
+      for (const tx of newTransactions) {
+        if (linked.has(tx.id) || tx.plannedId) continue;
+        if ((tx.amountCents >= 0) !== wantsIncome) continue;
         if (!dateWithinWindow(planned.faelligkeitsdatum, tx.date)) continue;
         if (!amountMatches(planned.betragCents, tx.amountCents)) continue;
         const diff = Math.abs(Math.abs(planned.betragCents) - Math.abs(tx.amountCents));
@@ -61,10 +68,12 @@
     return matches;
   }
 
-  async function createPlanned(DB, { name, betragCents, faelligkeitsdatum, category }) {
+  async function createPlanned(DB, { name, betragCents, faelligkeitsdatum, category, richtung }) {
+    const signedAmount = richtung === 'einnahme' ? Math.abs(betragCents) : -Math.abs(betragCents);
     const planned = {
       name,
-      betragCents: -Math.abs(betragCents),
+      betragCents: signedAmount,
+      richtung: richtung === 'einnahme' ? 'einnahme' : 'ausgabe',
       faelligkeitsdatum,
       category: category || Categorization.DEFAULT_CATEGORY_ID,
       status: 'offen',

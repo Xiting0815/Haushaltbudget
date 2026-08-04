@@ -138,8 +138,8 @@ async function main() {
   const unsicher = fixkosten.filter((f) => f.status === 'unsicher');
   console.log(`Erkannt: ${fixkosten.length} (bestätigt: ${bestaetigt.length}, unsicher: ${unsicher.length})`);
   assert(bestaetigt.length >= 5, 'Es sollten mehrere bestätigte Fixkosten erkannt werden (Miete, Telefon, ...)');
-  const rentLike = fixkosten.find((f) => Math.abs(f.amountCents) > 70000);
-  assert(rentLike, 'Ein großer wiederkehrender Posten (vermutlich Miete) sollte erkannt worden sein');
+  const rentLike = fixkosten.find((f) => f.amountCents < -70000);
+  assert(rentLike, 'Ein großer wiederkehrender Ausgabe-Posten (vermutlich Miete) sollte erkannt worden sein');
   console.log('Beispiel großer Fixposten:', rentLike.name, rentLike.amountCents / 100, 'EUR', rentLike.rhythmus, rentLike.status);
   console.log('OK: Fixkosten-Erkennung liefert plausible Ergebnisse');
 
@@ -194,6 +194,87 @@ async function main() {
   const rulesAfter = await DB.getAll('kategorieRegeln');
   assert(rulesAfter.length === rulesBefore.length + 1, 'Es sollte eine neue Regel entstanden sein');
   console.log('OK: Korrektur erzeugt neue Regel:', rule.keyword, '->', rule.category);
+
+  console.log('\n== 11) Wiederkehrende Einnahmen (Kindergeld/Gehalt) ==');
+  const incomeTx = [
+    { id: 9001, date: '2026-01-15', typ: 'Gutschrift', detail: 'FAMILIENKASSE KINDERGELD', amountCents: 25000, category: 'kinder', merchantKey: 'familienkassekindergeld' },
+    { id: 9002, date: '2026-02-16', typ: 'Gutschrift', detail: 'FAMILIENKASSE KINDERGELD', amountCents: 25000, category: 'kinder', merchantKey: 'familienkassekindergeld' },
+    { id: 9003, date: '2026-03-15', typ: 'Gutschrift', detail: 'FAMILIENKASSE KINDERGELD', amountCents: 25000, category: 'kinder', merchantKey: 'familienkassekindergeld' },
+  ];
+  const incomeCandidates = Recurring.detectRecurring(incomeTx, '2026-03-15');
+  assert.strictEqual(incomeCandidates.length, 1, 'Sollte genau ein wiederkehrendes Einnahme-Muster erkennen');
+  assert.strictEqual(incomeCandidates[0].richtung, 'einnahme', 'Kandidat sollte als Einnahme markiert sein');
+  assert.strictEqual(incomeCandidates[0].rhythmus, 'monatlich');
+  assert(incomeCandidates[0].amountCents > 0, 'Einnahme-Kandidat sollte positiven Betrag haben');
+  console.log('OK: Kindergeld als monatliche, wiederkehrende Einnahme erkannt, Status:', incomeCandidates[0].confidence);
+
+  console.log('\n== 12) Budget berücksichtigt erwartete Einnahmen als Zuschlag ==');
+  const todayForBudgetTest = '2026-06-05';
+  const fixkostenExpenseOnly = [{ id: 1, active: true, amountCents: -50000, naechsteFaelligkeit: '2026-06-10', name: 'Miete' }];
+  const fixkostenWithIncome = [...fixkostenExpenseOnly, { id: 2, active: true, amountCents: 25000, naechsteFaelligkeit: '2026-06-15', name: 'Kindergeld' }];
+  const budgetNoIncome = Budget.computeBudget({ currentBalanceCents: 100000, fixkosten: fixkostenExpenseOnly, geplanteAusgaben: [], today: todayForBudgetTest });
+  const budgetWithIncome = Budget.computeBudget({ currentBalanceCents: 100000, fixkosten: fixkostenWithIncome, geplanteAusgaben: [], today: todayForBudgetTest });
+  assert.strictEqual(
+    budgetWithIncome.availableForMonthCents - budgetNoIncome.availableForMonthCents,
+    25000,
+    'Erwartete Einnahme sollte das verfügbare Monatsbudget um genau ihren Betrag erhöhen'
+  );
+  console.log('OK: erwartete Einnahme (Kindergeld) erhöht das verfügbare Monatsbudget um', (25000 / 100).toFixed(2), 'EUR');
+
+  console.log('\n== 13) Geplante Einnahme + Vorzeichen-sicherer Abgleich ==');
+  const plannedIncome = await Planned.createPlanned(DB, { name: 'Steuererstattung', betragCents: 8000, faelligkeitsdatum: '2026-06-20', category: 'sonstiges', richtung: 'einnahme' });
+  assert(plannedIncome.betragCents > 0, 'Geplante Einnahme sollte positiven Betrag haben');
+  const fakeIncomeTxId = await DB.add('transactions', {
+    date: '2026-06-19', typ: 'Gutschrift', detail: 'Finanzamt Erstattung', amountCents: 7900,
+    category: 'sonstiges', categorySource: 'rule', merchantKey: 'finanzamterstattung', fingerprint: 'test-fp-income-1',
+    isManual: false, fixkostenId: null, plannedId: null, createdAt: new Date().toISOString(),
+  });
+  const fakeIncomeTx = await DB.get('transactions', fakeIncomeTxId);
+  const incomeMatches = Planned.matchPlannedToTransactions([plannedIncome], [fakeIncomeTx], []);
+  assert.strictEqual(incomeMatches.length, 1, 'Geplante Einnahme sollte mit passender Gutschrift verknüpft werden');
+  await Planned.applyMatches(DB, incomeMatches);
+  const plannedIncomeAfter = await DB.get('geplanteAusgaben', plannedIncome.id);
+  assert.strictEqual(plannedIncomeAfter.status, 'erledigt');
+
+  const plannedIncome2 = await Planned.createPlanned(DB, { name: 'Testeinnahme2', betragCents: 3000, faelligkeitsdatum: '2026-06-25', category: 'sonstiges', richtung: 'einnahme' });
+  const fakeExpenseTxId = await DB.add('transactions', {
+    date: '2026-06-24', typ: 'Debitkartenzahlung', detail: 'Laden', amountCents: -2950,
+    category: 'sonstiges', categorySource: 'rule', merchantKey: 'ladenxyz', fingerprint: 'test-fp-expense-2',
+    isManual: false, fixkostenId: null, plannedId: null, createdAt: new Date().toISOString(),
+  });
+  const fakeExpenseTx = await DB.get('transactions', fakeExpenseTxId);
+  const wrongSignMatches = Planned.matchPlannedToTransactions([plannedIncome2], [fakeExpenseTx], []);
+  assert.strictEqual(wrongSignMatches.length, 0, 'Eine Ausgabe darf nicht mit einer geplanten Einnahme verknüpft werden');
+  console.log('OK: geplante Einnahme korrekt abgeglichen, Vorzeichen-Verwechslung ausgeschlossen');
+
+  console.log('\n== 14) Manueller Kontostand-Reset ==');
+  await Manual.setBalanceManually(DB, 123456, '2026-08-04');
+  const manualBalance = await DB.getMeta('currentBalanceCents', null);
+  const manualSource = await DB.getMeta('currentBalanceSource', null);
+  const manualDate = await DB.getMeta('currentBalanceDate', null);
+  assert.strictEqual(manualBalance, 123456);
+  assert.strictEqual(manualSource, 'manual');
+  assert.strictEqual(manualDate, '2026-08-04');
+  console.log('OK: Kontostand lässt sich manuell setzen und wird korrekt als "manuell, am Datum X" markiert');
+
+  console.log('\n== 15) Dauerhaftes Ignorieren einer Fixkosten-Fehlerkennung ==');
+  const fkId = await DB.add('fixkosten', {
+    merchantKey: 'falscherkennungxyz', amountCents: -1999, status: 'ignoriert', active: false,
+    name: 'Fehlerkennung', naechsteFaelligkeit: '2026-05-01', rhythmus: 'monatlich', occurrences: 2, confidenceScore: 0.6,
+  });
+  const fakeCandidate = { merchantKey: 'falscherkennungxyz', amountCents: -1999, confidence: 'bestaetigt', naechsteFaelligkeit: '2026-06-01', occurrences: 3, confidenceScore: 0.7, rhythmus: 'monatlich' };
+  const existingFixkostenList = await DB.getAll('fixkosten');
+  const ignoredMatch = existingFixkostenList.find((fk) =>
+    fk.merchantKey === fakeCandidate.merchantKey && Recurring.amountsCloseEnough(fk.amountCents, fakeCandidate.amountCents));
+  assert(ignoredMatch, 'Match sollte trotz Ignorieren gefunden werden (für den Skip-Check)');
+  // Identische Bedingung wie in app.js/importFiles: ignorierte Einträge werden NIE aktualisiert.
+  if (ignoredMatch.status !== 'ignoriert' && ignoredMatch.status !== 'manuell') {
+    ignoredMatch.status = fakeCandidate.confidence;
+    await DB.put('fixkosten', ignoredMatch);
+  }
+  const fkAfter = await DB.get('fixkosten', fkId);
+  assert.strictEqual(fkAfter.status, 'ignoriert', 'Als "keine Fixkosten" markierter Posten darf beim nächsten Import nicht wieder aktiviert werden');
+  console.log('OK: dauerhaft ignorierter Fixkosten-Vorschlag wird beim nächsten Import nicht erneut vorgeschlagen');
 
   console.log('\nALLE INTEGRATIONSTESTS BESTANDEN ✔');
 }

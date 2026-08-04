@@ -38,6 +38,14 @@
  *  ~30 Tage  -> monatlich
  *  ~90 Tage  -> vierteljährlich
  *  ~365 Tage -> jährlich
+ *
+ * Erkennt seit August 2026 nicht mehr nur wiederkehrende Ausgaben, sondern
+ * auch wiederkehrende Einnahmen (Kindergeld, Gehalt, ...) — Auslöser war
+ * Nutzer-Feedback, dass die App zwar anstehende Fixkosten "vorhält", aber
+ * bekanntes, regelmäßig eintreffendes Geld nirgends als erwartetes
+ * Guthaben berücksichtigt. Die Ergebnisse tragen ein `richtung`-Feld
+ * ('ausgabe' | 'einnahme'); siehe app.js (Fixkosten-Merge) und budget.js
+ * (Rücklagenberechnung berücksichtigt Einnahmen als Gegenposten).
  */
 (function (root) {
   'use strict';
@@ -215,8 +223,10 @@
     const items = [...group.items].sort((a, b) => a.date.localeCompare(b.date));
     const occurrences = items.length;
 
+    const richtung = group.amountCents >= 0 ? 'einnahme' : 'ausgabe';
+
     if (occurrences < 2) {
-      return { ...group, occurrences, rhythmus: null, confidence: 'zu_wenig_daten', confidenceScore: 0 };
+      return { ...group, occurrences, richtung, rhythmus: null, confidence: 'zu_wenig_daten', confidenceScore: 0 };
     }
 
     const dates = items.map((i) => new Date(i.date + 'T00:00:00'));
@@ -251,7 +261,7 @@
 
     if (!bestRhythmus || amountCV >= AMOUNT_CV_GATE || (isHighVarianceCategory && occurrences < 3)) {
       return {
-        ...group, occurrences, rhythmus: null, confidence: 'kein_muster',
+        ...group, occurrences, richtung, rhythmus: null, confidence: 'kein_muster',
         confidenceScore: 0, amountCV, hasGlaeubigerId,
       };
     }
@@ -291,6 +301,7 @@
     return {
       ...group,
       occurrences,
+      richtung,
       avgGapDays: Math.round(intervals.reduce((s, g) => s + g, 0) / intervals.length),
       rhythmus: bestRhythmus,
       confidence,
@@ -308,10 +319,23 @@
    * zurück, die ein erkennbares Muster haben (>= 2 Vorkommen). Enthält
    * auch als "ausgelaufen" erkannte Posten, damit bereits bestätigte
    * Fixkosten beim nächsten Import korrekt deaktiviert werden können.
+   *
+   * Ausgaben (Fixkosten) und Einnahmen (z. B. Kindergeld, Gehalt) werden
+   * getrennt gruppiert und analysiert — ein Empfänger/Absender-Schlüssel
+   * soll nie eine Gutschrift und eine Lastschrift im selben Zyklus
+   * vermischen. Beide Richtungen laufen durch dieselbe Erkennungslogik
+   * (Intervall-/Betrags-Konsistenz, Aktualitäts-Check, Konfidenz-Score);
+   * das Ergebnis trägt ein `richtung`-Feld ('ausgabe' | 'einnahme'), damit
+   * wiederkehrende Einnahmen wie erwartetes Guthaben behandelt werden
+   * können statt nur wiederkehrende Ausgaben als Fixkosten.
    */
   function detectRecurring(transactions, today) {
-    const expenseOnly = transactions.filter((t) => t.amountCents < 0);
-    const groups = groupByMerchantAndAmount(expenseOnly);
+    const expenses = transactions.filter((t) => t.amountCents < 0);
+    const incomes = transactions.filter((t) => t.amountCents > 0);
+    const groups = [
+      ...groupByMerchantAndAmount(expenses),
+      ...groupByMerchantAndAmount(incomes),
+    ];
     return groups
       .map((g) => analyzeGroup(g, today))
       .filter((g) => g.rhythmus && g.occurrences >= 2)

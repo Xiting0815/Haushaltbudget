@@ -162,6 +162,38 @@ h1, h2, h3, p { margin: 0; }
   margin-top: 4px;
 }
 
+.hero-sub-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.hero-sub-row .hero-sub {
+  margin-top: 0;
+}
+
+.hero-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.16);
+  border: none;
+  border-radius: 999px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+.hero-edit-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
 /* ---------- Budget cards ---------- */
 .budget-grid {
   display: grid;

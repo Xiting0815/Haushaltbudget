@@ -1,10 +1,19 @@
 # Haushaltsbudget & Fixkosten-Tracker
 
-Installierbare PWA (HTML/JS, IndexedDB) für Fixkosten, Kontostand, Wochen-/
-Monatsbudget und Sparpotenzial. Kontoauszüge der Frankfurter Sparkasse (PDF)
-werden clientseitig importiert und automatisch kategorisiert. Kein Backend,
-kein Login, keine Cloud — alle Daten bleiben ausschließlich auf dem Gerät
+Installierbare PWA (HTML/JS, IndexedDB) für Fixkosten, wiederkehrende
+Einnahmen (Kindergeld, Gehalt), Kontostand, Wochen-/Monatsbudget und
+Sparpotenzial. Kontoauszüge der Frankfurter Sparkasse (PDF) werden
+clientseitig importiert und automatisch kategorisiert. Kein Backend, kein
+Login, keine Cloud — alle Daten bleiben ausschließlich auf dem Gerät
 (IndexedDB im Browser).
+
+Da sich Kontoauszüge realistisch erst zum Monatsende importieren lassen,
+kennt die App tagesaktuelle Buchungen im laufenden Monat naturgemäß nicht.
+Zwei Funktionen gleichen das aus: der Kontostand lässt sich in der
+Übersicht jederzeit manuell setzen ("Bearbeiten" neben dem Kontostand),
+und bekanntes, regelmäßig eintreffendes Geld (Kindergeld, Gehalt) wird —
+genau wie Fixkosten — als erwartetes Guthaben erkannt bzw. lässt sich
+händisch hinterlegen und fließt direkt ins Budget ein.
 
 ## Lokal testen
 
@@ -45,9 +54,9 @@ echten Browser. Ohne PDFs dort wird der Test übersprungen.
 - `js/db.js` — IndexedDB-Datenschicht
 - `js/pdfParser.js` — PDF-Parser für das feste Sparkassen-Layout (pdf.js)
 - `js/categorization.js` — regelbasierte, lernfähige Kategorisierung (max. 6 Kategorien)
-- `js/recurring.js` — Erkennung wiederkehrender Buchungen (Fixkosten-Vorschläge)
-- `js/planned.js` — geplante Ausgaben + Abgleich mit echten Buchungen
-- `js/manual.js` — manuelle Bar-/Spontankäufe
+- `js/recurring.js` — Erkennung wiederkehrender Buchungen, sowohl Ausgaben (Fixkosten-Vorschläge) als auch Einnahmen (z. B. Kindergeld, Gehalt)
+- `js/planned.js` — geplante Ausgaben *und* Einnahmen + vorzeichensicherer Abgleich mit echten Buchungen
+- `js/manual.js` — manuelle Bar-/Spontankäufe + manueller Kontostand-Reset
 - `js/budget.js` — Wochen-/Monatsbudget, Sparquote, Monatstrend
 - `js/exportData.js` — Monats-Export als JSON
 - `js/app.js` — UI-Controller, verdrahtet alles miteinander

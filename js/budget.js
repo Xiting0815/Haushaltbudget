@@ -38,6 +38,15 @@
   /**
    * Summe der Rücklagen für offene Fixkosten und geplante Ausgaben, die
    * zwischen heute und `untilDate` (inklusive) fällig werden.
+   *
+   * Fixkosten und geplante Posten sind vorzeichenbehaftet: negativ = Ausgabe
+   * (wird zurückgelegt, senkt den verfügbaren Betrag), positiv = erwartete
+   * Einnahme (Kindergeld, Gehalt, geplante Einnahme) — die wird stattdessen
+   * schon jetzt zum verfügbaren Betrag hinzugerechnet, da der Nutzer sie
+   * zuverlässig erwartet, auch wenn sie im Kontostand (letzter Auszug/
+   * manueller Stand) noch nicht enthalten ist. `reserve += -amountCents`
+   * bildet beide Fälle einheitlich ab: Ausgabe (negativ) erhöht die
+   * Rücklage, Einnahme (positiv) senkt sie (= erhöht das Verfügbare).
    */
   function computeReserveCents(fixkosten, geplanteAusgaben, fromDate, untilDate) {
     let reserve = 0;
@@ -47,7 +56,7 @@
       if (!f.active) continue;
       if (!f.naechsteFaelligkeit) continue;
       if (f.naechsteFaelligkeit >= fromDate && f.naechsteFaelligkeit <= untilDate) {
-        reserve += Math.abs(f.amountCents);
+        reserve += -f.amountCents;
         details.push({ type: 'fixkosten', id: f.id, name: f.name, amountCents: f.amountCents, faellig: f.naechsteFaelligkeit });
       }
     }
@@ -55,8 +64,8 @@
     for (const p of geplanteAusgaben) {
       if (p.status !== 'offen') continue;
       if (p.faelligkeitsdatum >= fromDate && p.faelligkeitsdatum <= untilDate) {
-        reserve += Math.abs(p.betragCents);
-        details.push({ type: 'geplant', id: p.id, name: p.name, amountCents: -Math.abs(p.betragCents), faellig: p.faelligkeitsdatum });
+        reserve += -p.betragCents;
+        details.push({ type: 'geplant', id: p.id, name: p.name, amountCents: p.betragCents, faellig: p.faelligkeitsdatum });
       }
     }
 

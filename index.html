@@ -37,7 +37,13 @@
     <div class="hero-card">
       <div class="hero-label">Kontostand</div>
       <div id="kontostand" class="hero-amount">–</div>
-      <div id="kontostandDatum" class="hero-sub"></div>
+      <div class="hero-sub-row">
+        <div id="kontostandDatum" class="hero-sub"></div>
+        <button id="btnEditKontostand" class="hero-edit-btn" type="button" aria-label="Kontostand bearbeiten">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 20h4l10.5-10.5a2 2 0 0 0 0-2.8l-1.2-1.2a2 2 0 0 0-2.8 0L4 16v4Z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Bearbeiten
+        </button>
+      </div>
     </div>
 
     <div class="budget-grid">
@@ -89,16 +95,23 @@
 
     <div id="fixkostenListe" class="stack"></div>
     <p id="fixkostenLeer" class="empty-hint" hidden>Noch keine Fixkosten erfasst. Sie werden beim PDF-Import automatisch erkannt, oder du legst sie manuell an.</p>
+
+    <div class="section-header">
+      <h2>Wiederkehrende Einnahmen</h2>
+    </div>
+    <p class="hint-text">Regelmäßiges Geld wie Kindergeld oder Gehalt — wird als erwartetes Guthaben schon vor dem Zahlungseingang im Budget berücksichtigt.</p>
+    <div id="einnahmenListe" class="stack"></div>
+    <p id="einnahmenLeer" class="empty-hint" hidden>Noch keine wiederkehrende Einnahme erfasst oder erkannt.</p>
   </section>
 
   <!-- GEPLANT -->
   <section id="view-geplant" class="view" hidden>
     <div class="section-header">
-      <h2>Geplante Ausgaben</h2>
+      <h2>Geplante Ausgaben & Einnahmen</h2>
       <button id="btnGeplantNeu" class="btn btn-secondary btn-sm" type="button">+ Neu</button>
     </div>
     <div id="geplantListe" class="stack"></div>
-    <p id="geplantLeer" class="empty-hint" hidden>Keine geplanten Ausgaben. Trage hier Ausgaben ein, die bald anstehen, z. B. ein Geschenk.</p>
+    <p id="geplantLeer" class="empty-hint" hidden>Nichts geplant. Trage hier Ausgaben ein, die bald anstehen (z. B. ein Geschenk), oder einmalige Einnahmen, die du sicher erwartest.</p>
   </section>
 
   <!-- TRENDS -->
@@ -135,6 +148,13 @@
 
   <!-- EINSTELLUNGEN -->
   <section id="view-einstellungen" class="view" hidden>
+    <div class="section-header">
+      <h2>Ignorierte Fixkosten-Vorschläge</h2>
+    </div>
+    <p class="hint-text">Als "keine Fixkosten" markierte Posten. Sie werden beim nächsten Import nicht erneut vorgeschlagen. Hier kannst du eine Entscheidung rückgängig machen.</p>
+    <div id="ignorierteListe" class="stack"></div>
+    <p id="ignorierteLeer" class="empty-hint" hidden>Keine ignorierten Vorschläge.</p>
+
     <div class="section-header">
       <h2>Kategorisierungsregeln</h2>
     </div>

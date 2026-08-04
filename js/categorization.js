@@ -56,7 +56,7 @@
 
     // Kinder & Familie
     ['kindergarten', 'kinder'], ['kindertagesstätte', 'kinder'], [' kita ', 'kinder'],
-    ['familienkasse', 'kinder'], ['jobcenter', 'kinder'], ['unterhalt', 'kinder'],
+    ['familienkasse', 'kinder'], ['kindergeld', 'kinder'], ['jobcenter', 'kinder'], ['unterhalt', 'kinder'],
     ['schulbedarf', 'kinder'], ['kinderbetreuung', 'kinder'], ['zoo ', 'kinder'],
     ['movie park', 'kinder'], ['europa-park', 'kinder'], ['europapark', 'kinder'],
     ['legoland', 'kinder'], ['spielplatz', 'kinder'], ['kids playland', 'kinder'],

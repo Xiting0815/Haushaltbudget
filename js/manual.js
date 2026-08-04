@@ -6,6 +6,13 @@
  * aus; sobald ein neuer Kontoauszug importiert wird, setzt dessen
  * Schlusssaldo den Kontostand ohnehin wieder auf den bankseitig
  * verbindlichen Wert zurück (siehe app.js/importStatement).
+ *
+ * Zusätzlich: manueller Kontostand-Reset (setBalanceManually). Kontoauszüge
+ * lassen sich realistisch erst zum Monatsende importieren — bis dahin kennt
+ * die App tagesaktuelle Bewegungen nicht. Damit der Nutzer den getrackten
+ * Kontostand trotzdem jederzeit "bereinigen" kann (z. B. nach Blick in die
+ * Banking-App), lässt sich der Stand hier direkt setzen, statt auf den
+ * nächsten Import warten zu müssen.
  */
 (function (root) {
   'use strict';
@@ -54,5 +61,18 @@
     await DB.setMeta('currentBalanceCents', current + deltaCents);
   }
 
-  root.Manual = { addManualTransaction, deleteManualTransaction, updateManualTransaction };
+  /**
+   * Setzt den getrackten Kontostand direkt auf einen vom Nutzer
+   * eingegebenen Wert (z. B. abgelesen aus der Banking-App), unabhängig
+   * von importierten Kontoauszügen. Markiert die Quelle als "manuell" mit
+   * heutigem Datum, damit die Übersicht transparent zeigt, dass der Stand
+   * nicht (mehr) aus einem Auszug stammt.
+   */
+  async function setBalanceManually(DB, newBalanceCents, dateISO) {
+    await DB.setMeta('currentBalanceCents', newBalanceCents);
+    await DB.setMeta('currentBalanceSource', 'manual');
+    await DB.setMeta('currentBalanceDate', dateISO || new Date().toISOString().slice(0, 10));
+  }
+
+  root.Manual = { addManualTransaction, deleteManualTransaction, updateManualTransaction, setBalanceManually };
 })(typeof window !== 'undefined' ? window : this);
