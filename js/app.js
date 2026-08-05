@@ -796,7 +796,10 @@
 
     for (const cat of Categorization.CATEGORIES) {
       const limit = limitByCategory[cat.id];
-      const currentValue = limit ? (limit.limitCents / 100).toFixed(2).replace('.', ',') : '';
+      // Punkt als Dezimaltrennzeichen: ein input[type=number] verwirft einen
+      // Wert mit Komma und zeigt das Feld dann leer an, obwohl ein Limit
+      // gesetzt ist.
+      const currentValue = limit ? (limit.limitCents / 100).toFixed(2) : '';
       const row = document.createElement('div');
       row.className = 'rule-item';
       row.innerHTML = `
@@ -805,19 +808,19 @@
           <span class="rule-keyword" style="flex:1">${escapeHTML(cat.name)}</span>
         </div>
         <div style="flex-shrink:0">
-          <input class="input" type="number" step="0.01" inputmode="decimal" data-categoryId="${cat.id}" value="${currentValue}" style="width:120px" placeholder="kein Limit">
+          <input class="input" type="number" step="0.01" inputmode="decimal" value="${currentValue}" style="width:120px" placeholder="kein Limit">
         </div>
       `;
       const input = row.querySelector('input');
       input.addEventListener('change', async () => {
-        const val = input.value.trim();
-        if (!val || isNaN(parseFloat(val)) || parseFloat(val) <= 0) {
+        const val = input.value.trim().replace(',', '.');
+        const euros = parseFloat(val);
+        if (!val || Number.isNaN(euros) || euros <= 0) {
           // Limit entfernen
           await DB.delete('kategorieBudgets', cat.id);
-          toast('Limit entfernt');
+          if (limit) toast('Limit entfernt');
         } else {
           // Limit speichern
-          const euros = parseFloat(val.replace(',', '.'));
           const limitCents = Math.round(euros * 100);
           await DB.put('kategorieBudgets', { categoryId: cat.id, limitCents });
           toast('Limit gespeichert');
@@ -1185,7 +1188,7 @@
       body.innerHTML = `
         <div class="modal-title">Backup einspielen?</div>
         <p class="hint-text">Die Backup-Datei enthält ${count} Buchung(en).</p>
-        <p style="color: var(--text-secondary)"><strong>Warnung:</strong> Alle aktuellen Daten auf diesem Gerät werden gelöscht und durch das Backup ersetzt. Dieser Vorgang lässt sich nicht rückgängig machen.</p>
+        <p style="color:var(--color-negative)"><strong>Warnung:</strong> Alle aktuellen Daten auf diesem Gerät werden gelöscht und durch das Backup ersetzt. Dieser Vorgang lässt sich nicht rückgängig machen.</p>
         <div class="modal-actions" style="display: flex; gap: 8px; margin-top: 16px;">
           <button class="btn btn-secondary btn-block" id="btnAbbrechen">Abbrechen</button>
           <button class="btn btn-primary btn-block" id="btnErsetzen">Ersetzen</button>
