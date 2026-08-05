@@ -149,6 +149,18 @@
   <!-- EINSTELLUNGEN -->
   <section id="view-einstellungen" class="view" hidden>
     <div class="section-header">
+      <h2>Datensicherung</h2>
+    </div>
+    <p class="hint-text">Alle Daten dieser App liegen ausschließlich auf diesem Gerät. Ohne Backup sind sie verloren, wenn du den Browser-Speicher löschst oder das Gerät wechselst. Die Backup-Datei enthält deine kompletten Finanzdaten — bewahre sie sicher auf.</p>
+    <div class="card">
+      <div class="form-row">
+        <button id="btnBackupExport" class="btn btn-secondary btn-sm" type="button">Backup speichern</button>
+        <button id="btnBackupImport" class="btn btn-secondary btn-sm" type="button">Backup wiederherstellen</button>
+      </div>
+      <p id="backupInfo" class="hint-text" style="margin-top:10px"></p>
+    </div>
+
+    <div class="section-header">
       <h2>Ignorierte Fixkosten-Vorschläge</h2>
     </div>
     <p class="hint-text">Als "keine Fixkosten" markierte Posten. Sie werden beim nächsten Import nicht erneut vorgeschlagen. Hier kannst du eine Entscheidung rückgängig machen.</p>
@@ -204,6 +216,7 @@
 </div>
 
 <input type="file" id="fileInput" accept="application/pdf" multiple hidden>
+<input type="file" id="backupFileInput" accept="application/json" hidden>
 
 <script src="vendor/pdf.min.js"></script>
 <script>
@@ -219,6 +232,7 @@
 <script src="js/manual.js"></script>
 <script src="js/pdfParser.js"></script>
 <script src="js/exportData.js"></script>
+<script src="js/backup.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

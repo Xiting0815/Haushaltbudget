@@ -704,6 +704,10 @@
   // EINSTELLUNGEN
   // ---------------------------------------------------------------
   function renderEinstellungen() {
+    // Datensicherungs-Info
+    document.getElementById('backupInfo').textContent =
+      `${state.transactions.length} Buchungen, ${state.fixkosten.length} Fixkosten, ${state.geplant.length} geplante Posten und ${state.rules.length} Kategorisierungsregeln auf diesem Gerät.`;
+
     const ignoriert = state.fixkosten.filter((f) => f.status === 'ignoriert');
     const ignorierteList = document.getElementById('ignorierteListe');
     ignorierteList.innerHTML = '';
@@ -1014,6 +1018,69 @@
       const ym = document.getElementById('exportMonatSelect').value;
       await ExportData.exportMonthAndDownload(DB, ym);
       toast('Export heruntergeladen');
+    });
+
+    document.getElementById('btnBackupExport').addEventListener('click', async () => {
+      await Backup.downloadBackup(DB);
+      toast('Backup gespeichert');
+    });
+
+    document.getElementById('btnBackupImport').addEventListener('click', () => {
+      document.getElementById('backupFileInput').click();
+    });
+
+    document.getElementById('backupFileInput').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      let payload;
+      try {
+        payload = await Backup.readBackupFile(file);
+      } catch (err) {
+        toast('Datei ist kein gültiges JSON.');
+        e.target.value = '';
+        return;
+      }
+
+      const validation = Backup.validateBackup(payload);
+      if (!validation.ok) {
+        toast(validation.fehler);
+        e.target.value = '';
+        return;
+      }
+
+      // Bestätigung einholen
+      const count = payload.stores.transactions ? payload.stores.transactions.length : 0;
+      const body = document.createElement('div');
+      body.innerHTML = `
+        <div class="modal-title">Backup einspielen?</div>
+        <p class="hint-text">Die Backup-Datei enthält ${count} Buchung(en).</p>
+        <p style="color: var(--text-secondary)"><strong>Warnung:</strong> Alle aktuellen Daten auf diesem Gerät werden gelöscht und durch das Backup ersetzt. Dieser Vorgang lässt sich nicht rückgängig machen.</p>
+        <div class="modal-actions" style="display: flex; gap: 8px; margin-top: 16px;">
+          <button class="btn btn-secondary btn-block" id="btnAbbrechen">Abbrechen</button>
+          <button class="btn btn-primary btn-block" id="btnErsetzen">Ersetzen</button>
+        </div>
+      `;
+
+      openModal(body);
+
+      body.querySelector('#btnAbbrechen').addEventListener('click', () => {
+        closeModal();
+        e.target.value = '';
+      });
+
+      body.querySelector('#btnErsetzen').addEventListener('click', async () => {
+        const result = await Backup.importBackup(DB, payload);
+        if (!result.ok) {
+          toast(`Fehler beim Import: ${result.fehler}`);
+        } else {
+          closeModal();
+          await loadAll();
+          render();
+          toast('Backup wiederhergestellt');
+        }
+        e.target.value = '';
+      });
     });
 
     document.getElementById('modalOverlay').addEventListener('click', (e) => {
