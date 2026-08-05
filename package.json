@@ -4,7 +4,8 @@
   "description": "Installierbare PWA für Haushaltsbudget, Fixkosten, Wochen-/Monatsbudget und Sparpotenzial. Alle Daten bleiben lokal (IndexedDB), kein Backend.",
   "private": true,
   "scripts": {
-    "test": "node tests/integration.test.js"
+    "test": "node tests/unit.test.js && node tests/integration.test.js",
+    "test:unit": "node tests/unit.test.js"
   },
   "keywords": ["pwa", "budget", "fixkosten"],
   "author": "",

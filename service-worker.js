@@ -5,7 +5,7 @@
  * Nutzerdaten (Kontoauszüge, Buchungen) über den Service Worker verarbeitet
  * oder übertragen — die Daten bleiben ausschließlich in IndexedDB.
  */
-const CACHE_NAME = 'haushaltsbudget-v4';
+const CACHE_NAME = 'haushaltsbudget-v5';
 const CORE_ASSETS = [
   './index.html',
   './manifest.json',
@@ -18,6 +18,8 @@ const CORE_ASSETS = [
   './js/manual.js',
   './js/pdfParser.js',
   './js/exportData.js',
+  './js/backup.js',
+  './js/search.js',
   './js/app.js',
   './vendor/pdf.min.js',
   './vendor/pdf.worker.min.js',
