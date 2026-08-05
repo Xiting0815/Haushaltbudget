@@ -10,6 +10,7 @@
     fixkosten: [],
     geplant: [],
     rules: [],
+    kategorieBudgets: [],
     currentBalanceCents: 0,
     view: 'uebersicht',
     selectedMonth: null,
@@ -67,6 +68,7 @@
     state.transactions = (await DB.getAll('transactions')).sort((a, b) => b.date.localeCompare(a.date));
     state.fixkosten = await DB.getAll('fixkosten');
     state.geplant = await DB.getAll('geplanteAusgaben');
+    state.kategorieBudgets = await DB.getAll('kategorieBudgets');
     state.currentBalanceCents = await DB.getMeta('currentBalanceCents', 0);
     state.currentBalanceSource = await DB.getMeta('currentBalanceSource', null);
     state.currentBalanceDate = await DB.getMeta('currentBalanceDate', null);
@@ -155,7 +157,8 @@
 
     // Kategorie-Chart für aktuellen Monat
     const summary = Budget.computeMonthSummary(state.transactions, monthKey(todayISO()));
-    renderCategoryChart(document.getElementById('kategorieChart'), summary.byCategory, summary.expenseCents);
+    const limitStatus = Budget.computeCategoryBudgetStatus(summary, state.kategorieBudgets);
+    renderCategoryChart(document.getElementById('kategorieChart'), summary.byCategory, summary.expenseCents, limitStatus);
   }
 
   function buildSimpleRow(title, sub, amountCents, emoji, categoryId) {
@@ -174,7 +177,7 @@
     return row;
   }
 
-  function renderCategoryChart(container, byCategory, totalExpense) {
+  function renderCategoryChart(container, byCategory, totalExpense, limitStatus) {
     container.innerHTML = '';
     const rows = Categorization.CATEGORIES
       .map((c) => ({ ...c, amount: byCategory[c.id] || 0 }))
@@ -186,19 +189,47 @@
       return;
     }
 
+    limitStatus = limitStatus || [];
+    const limitByCategory = {};
+    for (const limit of limitStatus) {
+      limitByCategory[limit.categoryId] = limit;
+    }
+
     const max = Math.max(...rows.map((r) => r.amount));
     for (const r of rows) {
       const pct = totalExpense > 0 ? Math.round((r.amount / totalExpense) * 100) : 0;
       const row = document.createElement('div');
       row.className = 'category-row';
+
+      const limit = limitByCategory[r.id];
+      let barHtml = `<div class="category-bar-fill" style="width:${(r.amount / max) * 100}%;background:${r.color}"></div>`;
+      let limitText = '';
+
+      if (limit) {
+        let barClass = '';
+        if (limit.status === 'warn') barClass = ' limit-warn';
+        else if (limit.status === 'over') barClass = ' limit-over';
+
+        barHtml = `<div class="category-bar-fill${barClass}" style="width:${(r.amount / max) * 100}%;background:${r.color}"></div>`;
+
+        if (limit.status === 'ok') {
+          limitText = `<div class="limit-info">noch ${fmtMoney(limit.restCents)} von ${fmtMoney(limit.limitCents)} übrig</div>`;
+        } else if (limit.status === 'warn') {
+          limitText = `<div class="limit-info">nur noch ${fmtMoney(limit.restCents)} von ${fmtMoney(limit.limitCents)} übrig</div>`;
+        } else if (limit.status === 'over') {
+          limitText = `<div class="limit-info">${fmtMoney(Math.abs(limit.restCents))} über dem Limit von ${fmtMoney(limit.limitCents)}</div>`;
+        }
+      }
+
       row.innerHTML = `
         <div class="category-row-top">
           <span>${escapeHTML(r.name)}</span>
           <span>${fmtMoney(r.amount)} · ${pct}%</span>
         </div>
         <div class="category-bar-track">
-          <div class="category-bar-fill" style="width:${(r.amount / max) * 100}%;background:${r.color}"></div>
+          ${barHtml}
         </div>
+        ${limitText}
       `;
       container.appendChild(row);
     }
@@ -707,6 +738,48 @@
     // Datensicherungs-Info
     document.getElementById('backupInfo').textContent =
       `${state.transactions.length} Buchungen, ${state.fixkosten.length} Fixkosten, ${state.geplant.length} geplante Posten und ${state.rules.length} Kategorisierungsregeln auf diesem Gerät.`;
+
+    // Kategorie-Limits
+    const limitsListe = document.getElementById('limitsListe');
+    limitsListe.innerHTML = '';
+    const limitByCategory = {};
+    for (const limit of state.kategorieBudgets) {
+      limitByCategory[limit.categoryId] = limit;
+    }
+
+    for (const cat of Categorization.CATEGORIES) {
+      const limit = limitByCategory[cat.id];
+      const currentValue = limit ? (limit.limitCents / 100).toFixed(2).replace('.', ',') : '';
+      const row = document.createElement('div');
+      row.className = 'rule-item';
+      row.innerHTML = `
+        <div style="display:flex;align-items:center;gap:9px;min-width:0">
+          <span class="cat-dot" style="background:${cat.color}"></span>
+          <span class="rule-keyword" style="flex:1">${escapeHTML(cat.name)}</span>
+        </div>
+        <div style="flex-shrink:0">
+          <input class="input" type="number" step="0.01" inputmode="decimal" data-categoryId="${cat.id}" value="${currentValue}" style="width:120px" placeholder="kein Limit">
+        </div>
+      `;
+      const input = row.querySelector('input');
+      input.addEventListener('change', async () => {
+        const val = input.value.trim();
+        if (!val || isNaN(parseFloat(val)) || parseFloat(val) <= 0) {
+          // Limit entfernen
+          await DB.delete('kategorieBudgets', cat.id);
+          toast('Limit entfernt');
+        } else {
+          // Limit speichern
+          const euros = parseFloat(val.replace(',', '.'));
+          const limitCents = Math.round(euros * 100);
+          await DB.put('kategorieBudgets', { categoryId: cat.id, limitCents });
+          toast('Limit gespeichert');
+        }
+        await loadAll();
+        render();
+      });
+      limitsListe.appendChild(row);
+    }
 
     const ignoriert = state.fixkosten.filter((f) => f.status === 'ignoriert');
     const ignorierteList = document.getElementById('ignorierteListe');

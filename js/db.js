@@ -17,7 +17,7 @@
   'use strict';
 
   const DB_NAME = 'haushaltsbudget';
-  const DB_VERSION = 1;
+  const DB_VERSION = 2;
 
   let dbPromise = null;
 
@@ -63,6 +63,10 @@
 
         if (!db.objectStoreNames.contains('meta')) {
           db.createObjectStore('meta', { keyPath: 'key' });
+        }
+
+        if (!db.objectStoreNames.contains('kategorieBudgets')) {
+          db.createObjectStore('kategorieBudgets', { keyPath: 'categoryId' });
         }
       };
 

@@ -14,7 +14,8 @@
     'geplanteAusgaben',
     'kategorieRegeln',
     'importierteAuszuege',
-    'meta'
+    'meta',
+    'kategorieBudgets'
   ];
 
   const SCHEMA_VERSION = 1;

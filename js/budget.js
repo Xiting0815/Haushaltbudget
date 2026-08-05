@@ -153,6 +153,41 @@
     return { avgMonthlySavingsCents: Math.round(avgSavings), avgSavingsRate: avgRate };
   }
 
+  /**
+   * Status der Kategorie-Limits für einen Monat.
+   * @param {object} monthSummary Ergebnis von computeMonthSummary
+   * @param {Array<{categoryId:string, limitCents:number}>} limits
+   * @returns {Array<{categoryId, limitCents, spentCents, restCents, pct, status}>}
+   */
+  function computeCategoryBudgetStatus(monthSummary, limits) {
+    if (!limits || limits.length === 0) return [];
+
+    const result = [];
+    for (const limit of limits) {
+      if (limit.limitCents <= 0) continue;
+
+      const spentCents = monthSummary.byCategory[limit.categoryId] || 0;
+      const restCents = limit.limitCents - spentCents;
+      const pct = Math.round((spentCents / limit.limitCents) * 100);
+      let status = 'ok';
+      if (pct > 100) status = 'over';
+      else if (pct >= 80) status = 'warn';
+
+      result.push({
+        categoryId: limit.categoryId,
+        limitCents: limit.limitCents,
+        spentCents: spentCents,
+        restCents: restCents,
+        pct: pct,
+        status: status
+      });
+    }
+
+    // Sortierung: absteigend nach pct
+    result.sort((a, b) => b.pct - a.pct);
+    return result;
+  }
+
   root.Budget = {
     todayISO,
     endOfMonth,
@@ -163,5 +198,6 @@
     computeMonthSummary,
     computeMonthlyTrend,
     computeSavingsPotential,
+    computeCategoryBudgetStatus,
   };
 })(typeof window !== 'undefined' ? window : this);
