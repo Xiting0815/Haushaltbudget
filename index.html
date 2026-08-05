@@ -80,6 +80,11 @@
       <h2>Buchungen</h2>
       <select id="monatFilter" class="select"></select>
     </div>
+    <div class="form-row" style="margin-bottom:12px">
+      <input id="buchungenSuche" class="input" type="search" placeholder="Suchen (z. B. Supermarkt)" style="flex:1">
+      <select id="buchungenKategorieFilter" class="select"></select>
+    </div>
+    <p id="buchungenSumme" class="hint-text"></p>
     <div id="buchungenListe" class="stack"></div>
     <p id="buchungenLeer" class="empty-hint" hidden>Noch keine Buchungen für diesen Monat.</p>
   </section>
@@ -239,6 +244,7 @@
 <script src="js/pdfParser.js"></script>
 <script src="js/exportData.js"></script>
 <script src="js/backup.js"></script>
+<script src="js/search.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

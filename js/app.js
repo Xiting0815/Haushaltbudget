@@ -14,6 +14,8 @@
     currentBalanceCents: 0,
     view: 'uebersicht',
     selectedMonth: null,
+    searchQuery: '',
+    categoryFilter: null,
   };
 
   const money = new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' });
@@ -243,12 +245,49 @@
     const months = availableMonths();
     sel.innerHTML = months.map((m) => `<option value="${m}" ${m === state.selectedMonth ? 'selected' : ''}>${monthLabel(m)}</option>`).join('');
 
-    const list = document.getElementById('buchungenListe');
-    const rows = state.transactions.filter((t) => monthKey(t.date) === state.selectedMonth);
-    list.innerHTML = '';
-    document.getElementById('buchungenLeer').hidden = rows.length !== 0;
+    // Kategoriefilter befüllen
+    const catSel = document.getElementById('buchungenKategorieFilter');
+    if (!catSel.value) {
+      catSel.innerHTML = '<option value="">Alle Kategorien</option>';
+      for (const cat of Categorization.CATEGORIES) {
+        catSel.innerHTML += `<option value="${cat.id}">${escapeHTML(cat.name)}</option>`;
+      }
+    } else {
+      const currentVal = catSel.value;
+      catSel.innerHTML = '<option value="">Alle Kategorien</option>';
+      for (const cat of Categorization.CATEGORIES) {
+        const selected = cat.id === currentVal ? ' selected' : '';
+        catSel.innerHTML += `<option value="${cat.id}"${selected}>${escapeHTML(cat.name)}</option>`;
+      }
+    }
 
-    for (const t of rows) {
+    // Suchfeld: nur befüllen, wenn Wert unterschiedlich ist (Fokus-Schutz)
+    const searchInput = document.getElementById('buchungenSuche');
+    if (searchInput.value !== state.searchQuery) {
+      searchInput.value = state.searchQuery;
+    }
+
+    // Filterung durchführen
+    const filteredRows = Search.filterTransactions(state.transactions, {
+      month: state.selectedMonth,
+      query: state.searchQuery,
+      categoryId: state.categoryFilter
+    });
+
+    const list = document.getElementById('buchungenListe');
+    list.innerHTML = '';
+    document.getElementById('buchungenLeer').hidden = filteredRows.length !== 0;
+
+    // Leer-Hinweis anpassen basierend auf aktiven Filtern
+    const emptyHint = document.getElementById('buchungenLeer');
+    if (state.searchQuery || state.categoryFilter) {
+      emptyHint.textContent = 'Keine Buchung passt zu dieser Suche.';
+    } else {
+      emptyHint.textContent = 'Noch keine Buchungen für diesen Monat.';
+    }
+
+    // Buchungen rendern
+    for (const t of filteredRows) {
       const cat = catInfo(t.category);
       const row = document.createElement('button');
       row.type = 'button';
@@ -263,6 +302,14 @@
       `;
       row.addEventListener('click', () => openTransactionModal(t));
       list.appendChild(row);
+    }
+
+    // Summenzeile
+    if (filteredRows.length > 0) {
+      const sum = Search.sumCents(filteredRows);
+      document.getElementById('buchungenSumme').textContent = `${filteredRows.length} Buchungen · Saldo ${fmtMoney(sum)}`;
+    } else {
+      document.getElementById('buchungenSumme').textContent = '';
     }
   }
 
@@ -1084,6 +1131,16 @@
 
     document.getElementById('monatFilter').addEventListener('change', (e) => {
       state.selectedMonth = e.target.value;
+      renderBuchungen();
+    });
+
+    document.getElementById('buchungenSuche').addEventListener('input', (e) => {
+      state.searchQuery = e.target.value;
+      renderBuchungen();
+    });
+
+    document.getElementById('buchungenKategorieFilter').addEventListener('change', (e) => {
+      state.categoryFilter = e.target.value || null;
       renderBuchungen();
     });
 
